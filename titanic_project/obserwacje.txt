@@ -1,0 +1,15 @@
+korelacje:
+Survived    1.000000
+Cabin       0.316801
+Parch       0.093077
+SibSp      -0.042584
+Age        -0.094431
+Pclass     -0.337801
+Sex        -0.544920
+
+klasy : ile osob ma kabine
+1    130
+2     13
+3      9
+
+jest mocny związek między kabinami, a klasą więc potencjalnie jedno można usunąć
