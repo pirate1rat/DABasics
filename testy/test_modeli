@@ -1,0 +1,187 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+import time
+
+from sklearn.base import BaseEstimator, TransformerMixin
+
+rooms_ix, bedrooms_ix, population_ix, households_ix = 3, 4, 5, 6
+
+class CombinedAttributesAdder(BaseEstimator, TransformerMixin):
+    def __init__(self, add_bedrooms_per_room = True): #zadnych zmiennych *args ani **kargs
+        self.add_bedrooms_per_room = add_bedrooms_per_room
+    def fit(self, X, y=None):
+        return self
+    def transform(self, X):
+        Pokoje_na_rodzine = X[:, rooms_ix] / X[:, households_ix]
+        Populacja_na_rodzine = X[:, population_ix] / X[:, households_ix]
+        if self.add_bedrooms_per_room:
+            Sypialnie_na_pokoje = X[:, bedrooms_ix] / X[:, rooms_ix]
+            return np.c_[X, Pokoje_na_rodzine, Populacja_na_rodzine, Sypialnie_na_pokoje]
+        else:
+            return np.c_[X, Pokoje_na_rodzine, Populacja_na_rodzine] # np.c_ np.column_stack    
+
+
+"""WCZYTYWANIE DANYCH""" 
+def load_data():
+    return pd.read_csv("projekt_ceny_domow\\housing.csv")
+
+housing_df = load_data()
+np.random.seed(0)
+
+housing_df['income_cat'] = pd.cut(housing_df['median_income'], 
+                                            bins=[0., 1.5, 3., 4.5, 6., np.inf],
+                                            labels=[1, 2, 3, 4, 5])
+
+"""DZIELENIE DANYCH NA ZBIORY PRZEZ LOSOWANIE WARSTWOWE"""
+split = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=0)
+for train_idx, test_idx in split.split(housing_df, housing_df['income_cat']):
+    train_set = housing_df.loc[train_idx]
+    test_set = housing_df.loc[test_idx]
+
+for set_ in (train_set, test_set):
+    set_.drop('income_cat', axis=1, inplace=True)
+housing_copy = train_set
+
+
+housing_labels = housing_copy['median_house_value'].copy().to_numpy()
+housing_copy = housing_copy.drop(columns=['median_house_value'])
+housing_num = housing_copy.drop(columns=['ocean_proximity'])
+
+
+"""WIELKA TRANSFORMACJA"""
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.metrics import mean_squared_error
+
+num_pipeline = Pipeline([
+    ('imputer', SimpleImputer(strategy='median')),
+    ('attribs_adder', CombinedAttributesAdder()),
+    ('std_scaller', StandardScaler()),
+])
+
+num_attribs = list(housing_num)
+cat_attribs = ['ocean_proximity']
+
+full_pipeline = ColumnTransformer([
+    ('num', num_pipeline, num_attribs),
+    ('cat', OneHotEncoder(), cat_attribs),
+])
+
+housing_prepared = full_pipeline.fit_transform(housing_copy)
+X_test = test_set.drop('median_house_value', axis=1)
+y_test = test_set['median_house_value'].copy()
+X_test_prepared = full_pipeline.transform(X_test)
+
+
+def random_forest():
+    ##############################
+    print("test: RandomForestRegressor")
+    start = time.time()
+    from sklearn.ensemble import RandomForestRegressor
+    forest_reg = RandomForestRegressor()
+    forest_reg.fit(housing_prepared, housing_labels)
+    end = time.time()
+    print("koniec nauki, czas: ", end - start)
+    final_predictions = forest_reg.predict(X_test_prepared)
+    final_mse = mean_squared_error(y_test, final_predictions)
+    final_rmse = np.sqrt(final_mse)
+    print('final_rmse: ', final_rmse)
+
+def linearsvr():
+    ##############################
+    print("test: LinearSVR")
+    start = time.time()
+    from sklearn.svm import LinearSVR
+    svm_linreg = LinearSVR(random_state=42)
+    svm_linreg.fit(housing_prepared, housing_labels)
+    end = time.time()
+    print("koniec nauki, czas: ", end - start)
+
+    final_predictions = svm_linreg.predict(housing_prepared)
+    final_mse = mean_squared_error(housing_labels, final_predictions)
+    final_rmse = np.sqrt(final_mse)
+    print('final_mse: ', final_mse)
+    print('final_rmse: ', final_rmse)
+
+def testing_svr():
+    ##############################
+    print("test: SVR")
+    start = time.time()
+    from sklearn.svm import SVR
+    svm = SVR(kernel='poly', degree=5)
+    svm.fit(housing_prepared, housing_labels)
+    end = time.time()
+    print("koniec nauki, czas: ", end - start)
+    final_predictions = svm.predict(X_test_prepared)
+    final_mse = mean_squared_error(y_test, final_predictions)
+    final_rmse = np.sqrt(final_mse)
+    print('final_rmse: ', final_rmse)
+
+def testing_ridge():
+    ##############################
+    print("test: Ridge")
+    start = time.time()
+    from sklearn.linear_model import Ridge
+    ridge_reg = Ridge(solver='saga')
+    ridge_reg.fit(housing_prepared, housing_labels)
+    end = time.time()
+    print("koniec nauki, czas: ", end - start)
+    final_predictions = ridge_reg.predict(X_test_prepared)
+    final_mse = mean_squared_error(y_test, final_predictions)
+    final_rmse = np.sqrt(final_mse)
+    print('final_mse: ', final_mse)
+    print('final_rmse: ', final_rmse)
+
+def testing_sgd():
+
+    ss = StandardScaler()
+    y_train_s = ss.fit_transform(housing_labels.reshape(-1,1)).ravel()  
+
+    print("test: SGDRegressor")
+    start = time.time()
+    from sklearn.linear_model import SGDRegressor
+    sgd_reg = SGDRegressor(loss='squared_error', penalty='l2', alpha=0.1, learning_rate='constant', 
+                            eta0=1e-5, max_iter=20000, tol=1e-5, shuffle=True, average=True, random_state=42)
+    
+    #sgd_reg.fit(housing_prepared, y_train_s)
+    sgd_reg.fit(housing_prepared, housing_labels)
+    end = time.time()
+    print("koniec nauki, czas: ", end - start)
+
+    #pred_s = sgd_reg.predict(X_test_prepared)
+    #final_predictions = ss.inverse_transform(pred_s.reshape(-1,1)).ravel()
+    final_predictions = sgd_reg.predict(X_test_prepared)
+
+    final_mse = mean_squared_error(y_test, final_predictions)
+    final_rmse = np.sqrt(final_mse)
+
+    # print("pred min/max:", final_predictions.min(), final_predictions.max())
+    # print("coef norm:", np.linalg.norm(sgd_reg.coef_))
+
+    print('final_rmse: ', final_rmse)
+
+def linear_reg():
+    ##############################
+    print("test: LinearRegression")
+    start = time.time()
+    from sklearn.linear_model import LinearRegression
+    lin_reg = LinearRegression()
+    lin_reg.fit(housing_prepared, housing_labels)
+    end = time.time()
+    print("koniec nauki, czas: ", end - start)
+    final_predictions = lin_reg.predict(X_test_prepared)
+    final_mse = mean_squared_error(y_test, final_predictions)
+    final_rmse = np.sqrt(final_mse)
+    print('final_rmse: ', final_rmse)
+
+linear_reg()
+#testing_sgd()
+#testing_ridge()
+# random_forest
+linearsvr()
+# testing_svr
