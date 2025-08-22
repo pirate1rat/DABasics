@@ -48,17 +48,20 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-from sklearn.svm import LinearSVR
+from sklearn.svm import SVR
+from sklearn.model_selection import RandomizedSearchCV
+from scipy.stats import reciprocal, uniform
 
-lin_svr = LinearSVR(random_state=42)
-lin_svr.fit(X_train_scaled, y_train)
-LinearSVR(random_state=42)
+params = {"gamma": reciprocal(0.001, 0.1), "C": uniform(1, 10)}
+svr = SVR(kernel='rbf')
+rand_search = RandomizedSearchCV(svr, params, n_iter=10, cv=3, random_state=42)
+rand_search.fit(X_train_scaled, y_train)
 
 from sklearn.metrics import mean_squared_error
 
-y_pred = lin_svr.predict(X_test_scaled)
-mse = mean_squared_error(y_test, y_pred)
-print(np.sqrt(mse))
+print(rand_search.best_estimator_)
+y_pred = rand_search.best_estimator_.predict(X_test_scaled)
+print(np.sqrt(mean_squared_error(y_test, y_pred)))
 
 
 def linear_reg():
@@ -68,10 +71,10 @@ def linear_reg():
     lin_reg = LinearRegression()
     lin_reg.fit(X_train_scaled, y_train)
     #final_predictions = lin_reg.predict(X_test)
-    final_mse = mean_squared_error(y_test, lin_reg.predict(X_test))
+    final_mse = mean_squared_error(y_test, lin_reg.predict(X_test_scaled))
     final_rmse = np.sqrt(final_mse)
     print('final_mse: ', final_mse)
     print('final_rmse: ', final_rmse)
 
-linear_reg()
+#linear_reg()
     
